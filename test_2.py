@@ -5,82 +5,85 @@ def main():
     """ Lattice Boltzmann Simulation """
 
     # User Inputs
-    cylinder_x = int(input("Enter cylinder center x-coordinate (0 to 399): "))
-    cylinder_y = int(input("Enter cylinder center y-coordinate (0 to 99): "))
-    cylinder_radius = int(input("Enter cylinder radius: "))
-    tau = float(input("Enter collision timescale tau (e.g., 0.6): "))
+    x_center = int(input("Enter the x-coordinate for the cylinder's center (0 to 399): "))
+    y_center = int(input("Enter the y-coordinate for the cylinder's center (0 to 99): "))
+    radius = int(input("Enter the cylinder's radius: "))
+    tau = float(input("Enter the relaxation time tau (e.g., 0.6): "))
 
-    # Simulation parameters
-    Nx = 400    # resolution x-dir
-    Ny = 100    # resolution y-dir
-    rho0 = 100    # average density
-    Nt = 4000   # number of timesteps
-    plotRealTime = True # switch on for plotting as the simulation goes along
+    # Simulation settings
+    Nx, Ny = 400, 100  # grid resolution
+    rho0 = 100  # initial density
+    Nt = 4000  # total timesteps
+    plot_in_real_time = True  # toggle for real-time plotting
 
-    # Lattice speeds / weights
-    NL = 9
-    idxs = np.arange(NL)
-    cxs = np.array([0, 0, 1, 1, 1, 0, -1, -1, -1])
-    cys = np.array([0, 1, 1, 0, -1, -1, -1, 0, 1])
-    weights = np.array([4/9, 1/9, 1/36, 1/9, 1/36, 1/9, 1/36, 1/9, 1/36])  # sums to 1
+    # Lattice velocities and weights
+    num_lattice_directions = 9
+    directions = np.arange(num_lattice_directions)
+    vel_x = np.array([0, 0, 1, 1, 1, 0, -1, -1, -1])
+    vel_y = np.array([0, 1, 1, 0, -1, -1, -1, 0, 1])
+    weights = np.array([4/9, 1/9, 1/36, 1/9, 1/36, 1/9, 1/36, 1/9, 1/36])  # must sum to 1
 
-    # Initial Conditions
-    F = np.ones((Ny, Nx, NL)) * rho0 / NL
+    # Initialize fluid density function
+    F = np.ones((Ny, Nx, num_lattice_directions)) * rho0 / num_lattice_directions
     np.random.seed(42)
-    F += 0.01 * np.random.randn(Ny, Nx, NL)
+    F += 0.01 * np.random.randn(Ny, Nx, num_lattice_directions)
     X, Y = np.meshgrid(range(Nx), range(Ny))
     F[:, :, 3] += 2 * (1 + 0.2 * np.cos(2 * np.pi * X / Nx * 4))
-    rho = np.sum(F, 2)
-    for i in idxs:
-        F[:, :, i] *= rho0 / rho
+    density = np.sum(F, axis=2)
+    for i in directions:
+        F[:, :, i] *= rho0 / density
 
-    # Cylinder boundary
+    # Define cylinder boundary
     X, Y = np.meshgrid(range(Nx), range(Ny))
-    cylinder = (X - cylinder_x) ** 2 + (Y - cylinder_y) ** 2 < cylinder_radius ** 2
+    cylinder = (X - x_center) ** 2 + (Y - y_center) ** 2 < radius ** 2
 
-    # Prep figure
+    # Prepare plot
     fig = plt.figure(figsize=(4, 2), dpi=80)
 
-    # Simulation Main Loop
-    for it in range(Nt):
-        if it % 100 == 0:
-            print(f'Timestep {it}/{Nt}')
+    # Main simulation loop
+    for timestep in range(Nt):
+        if timestep % 100 == 0:
+            print(f'Timestep {timestep}/{Nt}')
 
-        # Drift
-        for i, cx, cy in zip(idxs, cxs, cys):
-            F[:, :, i] = np.roll(F[:, :, i], cx, axis=1)
-            F[:, :, i] = np.roll(F[:, :, i], cy, axis=0)
+        # Streaming step
+        for i, vx, vy in zip(directions, vel_x, vel_y):
+            F[:, :, i] = np.roll(F[:, :, i], vx, axis=1)
+            F[:, :, i] = np.roll(F[:, :, i], vy, axis=0)
 
-        # Set reflective boundaries
-        bndryF = F[cylinder, :]
-        bndryF = bndryF[:, [0, 5, 6, 7, 8, 1, 2, 3, 4]]
+        # Reflective boundary conditions
+        boundary_F = F[cylinder, :]
+        boundary_F = boundary_F[:, [0, 5, 6, 7, 8, 1, 2, 3, 4]]
 
-        # Calculate fluid variables
-        rho = np.sum(F, 2)
-        ux = np.sum(F * cxs, 2) / rho
-        uy = np.sum(F * cys, 2) / rho
+        # Calculate macroscopic variables
+        density = np.sum(F, axis=2)
+        u_x = np.sum(F * vel_x, axis=2) / density
+        u_y = np.sum(F * vel_y, axis=2) / density
 
-        # Apply Collision
-        Feq = np.zeros(F.shape)
-        for i, cx, cy, w in zip(idxs, cxs, cys, weights):
-            Feq[:, :, i] = rho * w * (1 + 3 * (cx * ux + cy * uy) + 9 * (cx * ux + cy * uy) ** 2 / 2 - 3 * (ux ** 2 + uy ** 2) / 2)
+        # Collision step
+        F_eq = np.zeros_like(F)
+        for i, vx, vy, weight in zip(directions, vel_x, vel_y, weights):
+            F_eq[:, :, i] = density * weight * (
+                1 + 3 * (vx * u_x + vy * u_y) +
+                9 * (vx * u_x + vy * u_y) ** 2 / 2 -
+                3 * (u_x ** 2 + u_y ** 2) / 2
+            )
 
-        F += -(1.0 / tau) * (F - Feq)
+        F += -(1.0 / tau) * (F - F_eq)
 
-        # Apply boundary
-        F[cylinder, :] = bndryF
+        # Apply boundary conditions
+        F[cylinder, :] = boundary_F
 
-        # plot in real time - color 1/2 particles blue, other half red
-        if (plotRealTime and (it % 10) == 0) or (it == Nt - 1):
+        # Real-time plotting
+        if (plot_in_real_time and (timestep % 10 == 0)) or (timestep == Nt - 1):
             plt.cla()
-            ux[cylinder] = 0
-            uy[cylinder] = 0
-            vorticity = (np.roll(ux, -1, axis=0) - np.roll(ux, 1, axis=0)) - (np.roll(uy, -1, axis=1) - np.roll(uy, 1, axis=1))
+            u_x[cylinder] = 0
+            u_y[cylinder] = 0
+            vorticity = (np.roll(u_x, -1, axis=0) - np.roll(u_x, 1, axis=0)) - (np.roll(u_y, -1, axis=1) - np.roll(u_y, 1, axis=1))
             vorticity[cylinder] = np.nan
             vorticity = np.ma.array(vorticity, mask=cylinder)
             plt.imshow(vorticity, cmap='bwr')
             plt.imshow(~cylinder, cmap='gray', alpha=0.3)
-            plt.clim(-.1, .1)
+            plt.clim(-0.1, 0.1)
             ax = plt.gca()
             ax.invert_yaxis()
             ax.get_xaxis().set_visible(False)
@@ -88,8 +91,8 @@ def main():
             ax.set_aspect('equal')
             plt.pause(0.001)
 
-    # Save figure
-    plt.savefig('latticeboltzmann.png', dpi=240)
+    # Save final plot
+    plt.savefig('lattice_boltzmann_simulation.png', dpi=240)
     plt.show()
 
     return 0
