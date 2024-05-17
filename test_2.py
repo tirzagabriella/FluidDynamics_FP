@@ -56,6 +56,7 @@ def main():
 
         # Calculate macroscopic variables
         density = np.sum(F, axis=2)
+        density[density == 0] = np.finfo(float).eps  # Avoid division by zero
         u_x = np.sum(F * vel_x, axis=2) / density
         u_y = np.sum(F * vel_y, axis=2) / density
 
@@ -90,6 +91,12 @@ def main():
             ax.get_yaxis().set_visible(False)
             ax.set_aspect('equal')
             plt.pause(0.001)
+
+    # Calculate lift and drag forces
+    lift_force = np.sum(2 * (F[:, :, 1] - F[:, :, 5]) * cylinder)
+    drag_force = np.sum(2 * (F[:, :, 3] - F[:, :, 7]) * cylinder)
+    print(f"Lift Force: {lift_force:.2f}")
+    print(f"Drag Force: {drag_force:.2f}")
 
     # Save final plot
     plt.savefig('lattice_boltzmann_simulation.png', dpi=240)
