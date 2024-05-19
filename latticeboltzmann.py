@@ -9,6 +9,9 @@ def main():
     y_center = int(input("Enter the y-coordinate for the cylinder's center (0 to 99): "))
     radius = int(input("Enter the cylinder's radius: "))
     tau = float(input("Enter the relaxation time tau (e.g., 0.6): "))
+    # 0.05 on both x and y for slow, 0.3 for fast
+    initial_u_x = float(input("Enter the initial x-component of the fluid velocity: "))
+    initial_u_y = float(input("Enter the initial y-component of the fluid velocity: "))
 
     # Simulation settings
     Nx, Ny = 400, 100  # grid resolution
@@ -36,6 +39,10 @@ def main():
     # Define cylinder boundary
     X, Y = np.meshgrid(range(Nx), range(Ny))
     cylinder = (X - x_center) ** 2 + (Y - y_center) ** 2 < radius ** 2
+
+    # Initialize velocity field
+    u_x = np.full((Ny, Nx), initial_u_x)
+    u_y = np.full((Ny, Nx), initial_u_y)
 
     # Prepare plot
     fig = plt.figure(figsize=(4, 2), dpi=80)
