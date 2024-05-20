@@ -1,21 +1,50 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+def create_cylinder(Nx, Ny, x_center, y_center, radius):
+    """ Create a cylindrical boundary in a 2D grid. """
+    X, Y = np.meshgrid(range(Nx), range(Ny))
+    cylinder = (X - x_center) ** 2 + (Y - y_center) ** 2 < radius ** 2
+    return cylinder
+
 def main():
     """ Lattice Boltzmann Simulation """
 
     # User Inputs
-    x_center = int(input("Enter the x-coordinate for the cylinder's center (0 to 399): "))
-    y_center = int(input("Enter the y-coordinate for the cylinder's center (0 to 99): "))
+    x_center = int(input("Enter the x-coordinate for the cylinder's center (0 to 799): "))
+    y_center = int(input("Enter the y-coordinate for the cylinder's center (0 to 199): "))
     radius = int(input("Enter the cylinder's radius: "))
-    tau = float(input("Enter the relaxation time tau (e.g., 0.6): "))
-    # 0.05 on both x and y for slow, 0.3 for fast
     initial_u_x = float(input("Enter the initial x-component of the fluid velocity: "))
     initial_u_y = float(input("Enter the initial y-component of the fluid velocity: "))
+    
+    # Add an input for the fluid type
+    fluid_type = input("Enter the fluid type (e.g., 'water', 'oil', 'air'): ").lower()
+
+    # Set properties based on the fluid type
+    if fluid_type == 'water':
+        rho0 = 1000  # density of water in kg/m^3
+        default_tau = 0.6  # typical value for water
+        colormap = 'Blues'
+    elif fluid_type == 'oil':
+        rho0 = 900  # density of oil in kg/m^3
+        default_tau = 0.8  # higher tau for more viscous fluid
+        colormap = 'Greens'
+    elif fluid_type == 'air':
+        rho0 = 1.2  # density of air in kg/m^3
+        default_tau = 0.55  # lower tau for less viscous fluid
+        colormap = 'Reds'
+    else:
+        print("Unknown fluid type, using default values.")
+        rho0 = 100  # default density
+        default_tau = 0.6  # default tau
+        colormap = 'gray'
+
+    # Allow user to optionally input a custom tau
+    tau_input = input(f"Enter the relaxation time tau (default {default_tau}): ")
+    tau = float(tau_input) if tau_input else default_tau
 
     # Simulation settings
-    Nx, Ny = 400, 100  # grid resolution
-    rho0 = 100  # initial density
+    Nx, Ny = 800, 200  # increased grid resolution
     Nt = 4000  # total timesteps
     plot_in_real_time = True  # toggle for real-time plotting
 
@@ -29,7 +58,7 @@ def main():
     # Initialize fluid density function
     F = np.ones((Ny, Nx, num_lattice_directions)) * rho0 / num_lattice_directions
     np.random.seed(42)
-    F += 0.01 * np.random.randn(Ny, Nx, num_lattice_directions)
+    F += 0.001 * np.random.randn(Ny, Nx, num_lattice_directions)  # Reduced noise magnitude
     X, Y = np.meshgrid(range(Nx), range(Ny))
     F[:, :, 3] += 2 * (1 + 0.2 * np.cos(2 * np.pi * X / Nx * 4))
     density = np.sum(F, axis=2)
@@ -37,15 +66,14 @@ def main():
         F[:, :, i] *= rho0 / density
 
     # Define cylinder boundary
-    X, Y = np.meshgrid(range(Nx), range(Ny))
-    cylinder = (X - x_center) ** 2 + (Y - y_center) ** 2 < radius ** 2
+    cylinder = create_cylinder(Nx, Ny, x_center, y_center, radius)
 
     # Initialize velocity field
     u_x = np.full((Ny, Nx), initial_u_x)
     u_y = np.full((Ny, Nx), initial_u_y)
 
     # Prepare plot
-    fig = plt.figure(figsize=(4, 2), dpi=80)
+    fig = plt.figure(figsize=(12, 10), dpi=80)  # adjust figure size for larger grid
 
     # Main simulation loop
     for timestep in range(Nt):
@@ -82,15 +110,14 @@ def main():
         F[cylinder, :] = boundary_F
 
         # Real-time plotting
-        if (plot_in_real_time and (timestep % 10 == 0)) or (timestep == Nt - 1):
+        if (plot_in_real_time and (timestep % 50 == 0)) or (timestep == Nt - 1):  # Increased timestep for plotting
             plt.cla()
             u_x[cylinder] = 0
             u_y[cylinder] = 0
-            vorticity = (np.roll(u_x, -1, axis=0) - np.roll(u_x, 1, axis=0)) - (np.roll(u_y, -1, axis=1) - np.roll(u_y, 1, axis=1))
+            vorticity = (np.roll(u_y, -1, axis=0) - np.roll(u_y, 1, axis=0)) - (np.roll(u_x, -1, axis=1) - np.roll(u_x, 1, axis=1))
             vorticity[cylinder] = np.nan
-            vorticity = np.ma.array(vorticity, mask=cylinder)
-            plt.imshow(vorticity, cmap='bwr')
-            plt.imshow(~cylinder, cmap='gray', alpha=0.3)
+            plt.imshow(vorticity, cmap=colormap, origin='lower')
+            plt.imshow(cylinder, cmap='gray', alpha=0.3, origin='lower')
             plt.clim(-0.1, 0.1)
             ax = plt.gca()
             ax.invert_yaxis()
