@@ -1,142 +1,188 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import tkinter as tk
+from tkinter import colorchooser, messagebox
 
-def create_cylinder(Nx, Ny, x_center, y_center, radius):
-    """ Create a cylindrical boundary in a 2D grid. """
+def get_barrier(shape, Nx, Ny):
+    """ Define barrier shapes """
     X, Y = np.meshgrid(range(Nx), range(Ny))
-    cylinder = (X - x_center) ** 2 + (Y - y_center) ** 2 < radius ** 2
-    return cylinder
-
-def main():
-    """ Lattice Boltzmann Simulation """
-
-    # User Inputs
-    x_center = int(input("Enter the x-coordinate for the cylinder's center (0 to 799): "))
-    y_center = int(input("Enter the y-coordinate for the cylinder's center (0 to 199): "))
-    radius = int(input("Enter the cylinder's radius: "))
-    initial_u_x = float(input("Enter the initial x-component of the fluid velocity: "))
-    initial_u_y = float(input("Enter the initial y-component of the fluid velocity: "))
     
-    # Add an input for the fluid type
-    fluid_type = input("Enter the fluid type (e.g., 'water', 'oil', 'air'): ").lower()
-
-    # Set properties based on the fluid type
-    if fluid_type == 'water':
-        rho0 = 1000  # density of water in kg/m^3
-        default_tau = 0.6  # typical value for water
-        colormap = 'Blues'
-    elif fluid_type == 'oil':
-        rho0 = 900  # density of oil in kg/m^3
-        default_tau = 0.8  # higher tau for more viscous fluid
-        colormap = 'Greens'
-    elif fluid_type == 'air':
-        rho0 = 1.2  # density of air in kg/m^3
-        default_tau = 0.55  # lower tau for less viscous fluid
-        colormap = 'Reds'
+    if shape == 'circle':
+        barrier = (X - Nx/4)**2 + (Y - Ny/2)**2 < (Ny/4)**2
+    elif shape == 'rectangle':
+        barrier = (X > Nx/4) & (X < Nx/2) & (Y > Ny/4) & (Y < 3*Ny/4)
+    elif shape == 'triangle':
+        barrier = (X - Nx/4) + 2*(Y - Ny/2) < Ny/2
+    elif shape == 'cylinder':
+        barrier = (X - Nx/4)**2 + (Y - Ny/2)**2 < (Ny/6)**2
     else:
-        print("Unknown fluid type, using default values.")
-        rho0 = 100  # default density
-        default_tau = 0.6  # default tau
-        colormap = 'gray'
+        raise ValueError(f"Unknown shape: {shape}")
+    
+    return barrier
 
-    # Allow user to optionally input a custom tau
-    tau_input = input(f"Enter the relaxation time tau (default {default_tau}): ")
-    tau = float(tau_input) if tau_input else default_tau
-
-    # Simulation settings
-    Nx, Ny = 800, 200  # increased grid resolution
-    Nt = 4000  # total timesteps
-    plot_in_real_time = True  # toggle for real-time plotting
-
-    # Lattice velocities and weights
-    num_lattice_directions = 9
-    directions = np.arange(num_lattice_directions)
-    vel_x = np.array([0, 0, 1, 1, 1, 0, -1, -1, -1])
-    vel_y = np.array([0, 1, 1, 0, -1, -1, -1, 0, 1])
-    weights = np.array([4/9, 1/9, 1/36, 1/9, 1/36, 1/9, 1/36, 1/9, 1/36])  # must sum to 1
-
-    # Initialize fluid density function
-    F = np.ones((Ny, Nx, num_lattice_directions)) * rho0 / num_lattice_directions
+def run_simulation(shape, simulation_window, speed, fluid_colormap, barrier_color, fluid_type):
+    """ Lattice Boltzmann Simulation """
+    
+    def reset():
+        simulation_window.destroy()
+        root.deiconify()
+    
+    # Simulation parameters
+    Nx = 400    # resolution x-dir
+    Ny = 100    # resolution y-dir
+    rho0 = 100  # average density
+    Nt = 4000   # number of timesteps
+    plotRealTime = True # switch on for plotting as the simulation goes along
+    
+    # Set tau based on fluid type
+    fluid_types = {'water': 0.6, 'oil': 1.0, 'air': 0.1}
+    tau = fluid_types.get(fluid_type, 0.6)
+    
+    # Lattice speeds / weights
+    NL = 9
+    idxs = np.arange(NL)
+    cxs = np.array([0, 0, 1, 1, 1, 0,-1,-1,-1])
+    cys = np.array([0, 1, 1, 0,-1,-1,-1, 0, 1])
+    weights = np.array([4/9,1/9,1/36,1/9,1/36,1/9,1/36,1/9,1/36]) # sums to 1
+    
+    # Initial Conditions
+    F = np.ones((Ny,Nx,NL)) #* rho0 / NL
     np.random.seed(42)
-    F += 0.001 * np.random.randn(Ny, Nx, num_lattice_directions)  # Reduced noise magnitude
+    F += 0.01*np.random.randn(Ny,Nx,NL)
     X, Y = np.meshgrid(range(Nx), range(Ny))
-    F[:, :, 3] += 2 * (1 + 0.2 * np.cos(2 * np.pi * X / Nx * 4))
-    density = np.sum(F, axis=2)
-    for i in directions:
-        F[:, :, i] *= rho0 / density
-
-    # Define cylinder boundary
-    cylinder = create_cylinder(Nx, Ny, x_center, y_center, radius)
-
-    # Initialize velocity field
-    u_x = np.full((Ny, Nx), initial_u_x)
-    u_y = np.full((Ny, Nx), initial_u_y)
-
-    # Prepare plot
-    fig = plt.figure(figsize=(12, 10), dpi=80)  # adjust figure size for larger grid
-
-    # Main simulation loop
-    for timestep in range(Nt):
-        if timestep % 100 == 0:
-            print(f'Timestep {timestep}/{Nt}')
-
-        # Streaming step
-        for i, vx, vy in zip(directions, vel_x, vel_y):
-            F[:, :, i] = np.roll(F[:, :, i], vx, axis=1)
-            F[:, :, i] = np.roll(F[:, :, i], vy, axis=0)
-
-        # Reflective boundary conditions
-        boundary_F = F[cylinder, :]
-        boundary_F = boundary_F[:, [0, 5, 6, 7, 8, 1, 2, 3, 4]]
-
-        # Calculate macroscopic variables
-        density = np.sum(F, axis=2)
-        density[density == 0] = np.finfo(float).eps  # Avoid division by zero
-        u_x = np.sum(F * vel_x, axis=2) / density
-        u_y = np.sum(F * vel_y, axis=2) / density
-
-        # Collision step
-        F_eq = np.zeros_like(F)
-        for i, vx, vy, weight in zip(directions, vel_x, vel_y, weights):
-            F_eq[:, :, i] = density * weight * (
-                1 + 3 * (vx * u_x + vy * u_y) +
-                9 * (vx * u_x + vy * u_y) ** 2 / 2 -
-                3 * (u_x ** 2 + u_y ** 2) / 2
-            )
-
-        F += -(1.0 / tau) * (F - F_eq)
-
-        # Apply boundary conditions
-        F[cylinder, :] = boundary_F
-
-        # Real-time plotting
-        if (plot_in_real_time and (timestep % 50 == 0)) or (timestep == Nt - 1):  # Increased timestep for plotting
+    F[:,:,3] += 2 * (1+0.2*np.cos(2*np.pi*X/Nx*4))
+    rho = np.sum(F,2)
+    for i in idxs:
+        F[:,:,i] *= rho0 / rho
+    
+    # Select barrier shape
+    barrier = get_barrier(shape, Nx, Ny)
+    
+    # Convert hex color to RGB
+    barrier_rgb = tuple(int(barrier_color[i:i+2], 16) / 255 for i in (1, 3, 5))
+    
+    # Prep figure
+    fig = plt.figure(figsize=(4,2), dpi=80)
+    
+    # Simulation Main Loop
+    for it in range(Nt):
+        print(it)
+        
+        # Drift
+        for i, cx, cy in zip(idxs, cxs, cys):
+            F[:,:,i] = np.roll(F[:,:,i], cx, axis=1)
+            F[:,:,i] = np.roll(F[:,:,i], cy, axis=0)
+        
+        # Set reflective boundaries
+        bndryF = F[barrier,:]
+        bndryF = bndryF[:,[0,5,6,7,8,1,2,3,4]]
+    
+        # Calculate fluid variables
+        rho = np.sum(F,2)
+        ux  = np.sum(F*cxs,2) / rho
+        uy  = np.sum(F*cys,2) / rho
+        
+        # Apply Collision
+        Feq = np.zeros(F.shape)
+        for i, cx, cy, w in zip(idxs, cxs, cys, weights):
+            Feq[:,:,i] = rho * w * ( 1 + 3*(cx*ux+cy*uy)  + 9*(cx*ux+cy*uy)**2/2 - 3*(ux**2+uy**2)/2 )
+        
+        F += -(1.0/tau) * (F - Feq)
+        
+        # Apply boundary 
+        F[barrier,:] = bndryF
+        
+        # plot in real time - color 1/2 particles blue, other half red
+        if (plotRealTime and (it % 10) == 0) or (it == Nt-1):
             plt.cla()
-            u_x[cylinder] = 0
-            u_y[cylinder] = 0
-            vorticity = (np.roll(u_y, -1, axis=0) - np.roll(u_y, 1, axis=0)) - (np.roll(u_x, -1, axis=1) - np.roll(u_x, 1, axis=1))
-            vorticity[cylinder] = np.nan
-            plt.imshow(vorticity, cmap=colormap, origin='lower')
-            plt.imshow(cylinder, cmap='gray', alpha=0.3, origin='lower')
-            plt.clim(-0.1, 0.1)
+            ux[barrier] = 0
+            uy[barrier] = 0
+            vorticity = (np.roll(ux, -1, axis=0) - np.roll(ux, 1, axis=0)) - (np.roll(uy, -1, axis=1) - np.roll(uy, 1, axis=1))
+            vorticity[barrier] = np.nan
+            vorticity = np.ma.array(vorticity, mask=barrier)
+            plt.imshow(vorticity, cmap=fluid_colormap)
+            plt.imshow(~barrier, cmap='gray', alpha=0.3)
+            plt.clim(-.1, .1)
             ax = plt.gca()
             ax.invert_yaxis()
             ax.get_xaxis().set_visible(False)
-            ax.get_yaxis().set_visible(False)
-            ax.set_aspect('equal')
-            plt.pause(0.001)
-
-    # Calculate lift and drag forces
-    lift_force = np.sum(2 * (F[:, :, 1] - F[:, :, 5]) * cylinder)
-    drag_force = np.sum(2 * (F[:, :, 3] - F[:, :, 7]) * cylinder)
-    print(f"Lift Force: {lift_force:.2f}")
-    print(f"Drag Force: {drag_force:.2f}")
-
-    # Save final plot
-    plt.savefig('lattice_boltzmann_simulation.png', dpi=240)
+            ax.get_yaxis().set_visible(False)    
+            ax.set_aspect('equal')    
+            
+            # Overlay the barrier with the chosen color
+            barrier_overlay = np.zeros((Ny, Nx, 3))
+            barrier_overlay[..., 0] = barrier_rgb[0] * barrier
+            barrier_overlay[..., 1] = barrier_rgb[1] * barrier
+            barrier_overlay[..., 2] = barrier_rgb[2] * barrier
+            plt.imshow(barrier_overlay, alpha=0.7)
+            
+            plt.pause(0.1 / speed.get())
+    
+    # Save figure
+    plt.savefig('latticeboltzmann.png',dpi=240)
     plt.show()
 
-    return 0
+# Simulation function
+def start_simulation(shape, speed, fluid_colormap, barrier_color, fluid_type):
+    root.withdraw()  # Hide the main GUI window
 
-if __name__ == "__main__":
-    main()
+    #new Tk instance for the simulation window
+    simulation_window = tk.Toplevel(root)
+    simulation_window.title("Lattice Boltzmann Simulation")
+    
+    # Run the simulation
+    run_simulation(shape, simulation_window, speed, fluid_colormap, barrier_color, fluid_type)
+
+def choose_color(title):
+    color_code = colorchooser.askcolor(title=title)[1]
+    return color_code
+
+def choose_colormap(title):
+    colormaps = sorted(m for m in plt.cm.datad if not m.endswith("_r"))
+    colormap_window = tk.Toplevel(root)
+    colormap_window.title(title)
+    
+    colormap_var = tk.StringVar(value=colormaps[0])
+    
+    for cmap in colormaps:
+        tk.Radiobutton(colormap_window, text=cmap, variable=colormap_var, value=cmap).pack(anchor='w')
+    
+    def select_colormap():
+        colormap_window.destroy()
+    
+    tk.Button(colormap_window, text="Select", command=select_colormap).pack()
+    
+    root.wait_window(colormap_window)
+    return colormap_var.get()
+
+# GUI SET UP
+root = tk.Tk()
+root.title("Lattice Boltzmann Simulation")
+
+tk.Label(root, text="Select Barrier Shape:").pack()
+
+shapes = ["circle", "rectangle", "triangle", "cylinder"]
+
+shape_var = tk.StringVar()
+speed_var = tk.IntVar(value=5)
+fluid_colormap_var = tk.StringVar(value='bwr')
+barrier_color_var = tk.StringVar(value='#808080')  # Default to gray
+fluid_type_var = tk.StringVar(value='water')  # Default to water
+
+for shape in shapes:
+    tk.Radiobutton(root, text=shape.capitalize(), variable=shape_var, value=shape).pack()
+
+tk.Label(root, text="Select Simulation Speed:").pack()
+speed = tk.Scale(root, from_=1, to=10, orient=tk.HORIZONTAL, length=200, variable=speed_var)
+speed.pack()
+
+tk.Button(root, text="Choose Barrier Color", command=lambda: barrier_color_var.set(choose_color("Select Barrier Color"))).pack()
+
+tk.Label(root, text="Select Fluid Type:").pack()
+fluid_types = ["water", "oil", "air"]
+for fluid in fluid_types:
+    tk.Radiobutton(root, text=fluid.capitalize(), variable=fluid_type_var, value=fluid).pack()
+
+tk.Button(root, text="Start Simulation", command=lambda: start_simulation(shape_var.get(), speed_var, fluid_colormap_var.get(), barrier_color_var.get(), fluid_type_var.get())).pack()
+
+root.mainloop()
