@@ -42,7 +42,7 @@ pip install numpy matplotlib
 ## Usage
 
 To start the simulation, navigate to the project directory and run:
-**python simulation.py**
+`python simulation.py`
 Use the GUI to select the barrier shape, fluid type, simulation speed, and colors. Once configured, click "Start Simulation" to begin visualizing the fluid dynamics.
 
 ### Clone the Repository
