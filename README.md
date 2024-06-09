@@ -11,7 +11,7 @@ This project implements a 2D fluid dynamics simulation using the Lattice Boltzma
 
 ## Features
 
-- **Customizable Barrier Shapes:** Supports different shapes such as circles, rectangles, triangles, and cylinders.
+- **Customizable Barrier Shapes:** Supports different shapes such as circle, rectangle, triangle, car, and airplane.
 - **Fluid Type Selection:** Allows simulation with different fluid types including water, oil, and air.
 - **Real-Time Visualization:** Observe the dynamics of fluid flow as the simulation runs.
 - **Color Customization:** Choose colors for barriers and fluid flow visualization.
